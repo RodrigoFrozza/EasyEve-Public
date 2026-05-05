@@ -1,0 +1,29 @@
+{
+  "id": "rifter-shield",
+  "shipTypeId": 587,
+  "target": {
+    "signatureRadius": 125,
+    "velocity": 180,
+    "angularVelocity": 0.04
+  },
+  "weapon": {
+    "optimal": 9000,
+    "falloff": 6000,
+    "tracking": 0.42,
+    "rangeToTarget": 9000
+  },
+  "missile": {
+    "explosionRadius": 50,
+    "explosionVelocity": 1500
+  },
+  "capacitor": {
+    "capacity": 350,
+    "rechargeTimeMs": 175000,
+    "usagePerSecond": 1.2
+  },
+  "expected": {
+    "turretHitChance": 0.9994,
+    "missileApplication": 1.0,
+    "capStable": false
+  }
+}

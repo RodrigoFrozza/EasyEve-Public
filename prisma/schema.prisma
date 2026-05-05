@@ -1,0 +1,969 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  accountCode       String?  @unique
+  email             String?
+  name              String?
+  role              String   @default("user") // master, user
+  allowedActivities String[] @default([])
+
+  // Subscription & Blocking
+  isBlocked         Boolean      @default(false)
+  blockedAt         DateTime?
+  blockReason       String?
+  subscriptionEnd   DateTime?
+  
+  // ISK Balance (1 ISK transferred = 1 ISK credited)
+  iskBalance        Float        @default(0)
+
+  // Future Integrations & Tracking
+  lastLoginAt       DateTime?
+  discordId         String?
+  discordName       String?
+  isTester          Boolean       @default(false)
+  testerApprovedAt  DateTime?
+  testerRevokedAt   DateTime?
+  testerApprovedById String?
+  testerRevokedById String?
+
+  characters        Character[]
+  fits             Fit[]
+  activities        Activity[]
+  payments         Payment[]
+  activationCodes   ActivationCode[]
+  createdCodes    ActivationCode[] @relation("CreatedCodes")
+  promoBannerInteractions PromoBannerInteraction[]
+  debugLogs        DebugLog[]
+  iskHistory       IskHistory[]
+  
+  // Player Profile Relations
+  profile           UserProfile?
+  reputationHistory ReputationHistory[]
+  medals            MedalAward[]
+  sentMessages      PlayerMessage[]  @relation("SenderMessages")
+  receivedMessages  PlayerMessage[]  @relation("ReceiverMessages")
+  contacts          UserContact[]    @relation("UserContacts")
+  contactOf         UserContact[]    @relation("ContactOfUser")
+  notifications     Notification[]
+  customScriptMemos CustomScriptMemo[]
+  testerApplications TesterApplication[] @relation("TesterApplicationsOwner")
+  reviewedTesterApplications TesterApplication[] @relation("TesterApplicationsReviewer")
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([role])
+  @@index([role, subscriptionEnd])
+  @@index([subscriptionEnd])
+  @@index([isBlocked])
+  @@index([isTester])
+}
+
+model TesterApplication {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation("TesterApplicationsOwner", fields: [userId], references: [id], onDelete: Cascade)
+  status          String   @default("pending") // pending, approved, rejected
+  description     String   @db.Text
+  rulesAcceptedAt DateTime
+  reviewNotes     String?  @db.Text
+  reviewedById    String?
+  reviewedBy      User?    @relation("TesterApplicationsReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?
+  cooldownUntil   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Character {
+  id             Int       @id
+  name           String
+  ownerHash      String    @unique
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+
+  totalSp       Int     @default(0)
+  walletBalance Float   @default(0)
+  location      String?
+  ship          String?
+  shipTypeId    Int?
+  tags          String[] // Planner categories
+
+  esiApp         String    @default("main") // "main" or "holding"
+  isMain        Boolean @default(false)
+  isCorpManager Boolean @default(false) // Designated for corp wallet sync
+  corporationId Int?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  lastFetchedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([userId, isMain])
+  @@index([name])
+  @@index([ship])
+  @@index([corporationId])
+}
+
+model Payment {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amount             Float
+  monthsPaid         Int     @default(1)
+  payerCharacterId   Int?
+  payerCharacterName String?
+  journalId          String? @unique // ESI wallet journal ID to prevent duplicates
+
+  status  String   @default("pending") // pending, approved, rejected
+  modules String[] // Modules this payment is for
+
+  createdAt  DateTime  @default(now())
+  approvedAt DateTime?
+
+  @@index([userId])
+  @@index([journalId])
+  @@index([payerCharacterName])
+  @@index([status])
+}
+
+model ModulePrice {
+  id        String   @id @default(cuid())
+  module    String   @unique // e.g., "ratting", "mining"
+  price     Float
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Visibility {
+  PUBLIC
+  PROTECTED
+}
+
+model Fit {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name        String
+  description String?
+  ship        String
+  shipTypeId  Int?
+  
+  modules     Json     @default("[]") // Array of modules
+  drones      Json?    @default("[]") // Array of drones
+  cargo       Json?    @default("[]") // Array of cargo items
+  
+  tags        String[] @default([])
+  visibility  Visibility @default(PROTECTED)
+  
+  esiData     Json?    // Snapshot of ship stats from ESI
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("fits")
+  @@index([userId])
+  @@index([userId, visibility])
+  @@index([visibility])
+  @@index([visibility, updatedAt])
+}
+
+model Activity {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  characterId Int?
+
+  type      String // EX: MINING, RATTING, ABYSSAL, EXPLORATION, ESCALATIONS, CRAB, PVP
+  status    String    @default("active") // active, completed
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+
+  // Link to the primary item for this activity (e.g., the ship used or the key item)
+  typeId Int?
+  item   EveType? @relation(fields: [typeId], references: [id])
+
+  // Contextual information
+  region String?
+  space  String?
+
+  // Dynamic Activity Data (JSON for flexibility and easy copying/pasting)
+  // Mining: { oreMined: { typeId: count } }
+  // Ratting: { mtuContents: [{ typeId: count }], totalBounty: number }
+  // Abyssal: { lootBefore: string, lootAfter: string, tier: string, weather: string }
+  data Json? @default("{}")
+
+  participants Json @default("[]") // [{"characterId": 123, "fit": "optional"}]
+
+  // Pause States for time tracking
+  isPaused              Boolean   @default(false)
+  pausedAt              DateTime?
+  accumulatedPausedTime Int       @default(0) // in milliseconds
+
+  isDeleted             Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([characterId])
+  @@index([status])
+  @@index([type])
+  @@index([typeId])
+
+  // Composite indexes for leaderboard queries optimization
+  @@index([type, startTime])
+  @@index([userId, startTime])
+  @@index([userId, type, startTime])
+  @@index([userId, status, type])
+  @@index([type, startTime, isDeleted])
+  @@index([status, startTime])
+  // Unified activity background sync: filter by flags + order by updatedAt; completed mining by endTime window
+  @@index([isDeleted, isPaused, status, updatedAt])
+  @@index([type, status, endTime, isDeleted, isPaused])
+}
+
+// --- NEW UNIFIED SDE INFRASTRUCTURE ---
+
+model EveType {
+  id          Int      @id
+  name        String
+  description String?  @db.Text
+  groupId     Int
+  raceId      Int?
+  factionId   Int?
+  group       EveGroup @relation(fields: [groupId], references: [id])
+  volume      Float?
+  basePrice   Float?
+  iconId      Int?
+  published   Boolean  @default(true)
+
+  activities Activity[]
+  shipStats  ShipStats?
+
+  marketGroupId Int?
+  marketGroup   EveMarketGroup? @relation(fields: [marketGroupId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId])
+  @@index([raceId])
+  @@index([factionId])
+  @@index([marketGroupId])
+}
+
+model EveMarketGroup {
+  id              Int              @id
+  name            String
+  description     String?          @db.Text
+  parentGroupId   Int?
+  parentGroup     EveMarketGroup?  @relation("MarketGroupHierarchy", fields: [parentGroupId], references: [id])
+  childGroups     EveMarketGroup[] @relation("MarketGroupHierarchy")
+  types           EveType[]
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([parentGroupId])
+}
+
+model EveGroup {
+  id         Int         @id
+  name       String
+  categoryId Int
+  category   EveCategory @relation(fields: [categoryId], references: [id])
+  types      EveType[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+}
+
+model EveCategory {
+  id     Int        @id
+  name   String
+  groups EveGroup[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SdeCache {
+  id        String    @id @default(cuid())
+  key       String    @unique
+  value     Json
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([expiresAt])
+}
+
+model DebugLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  characterId Int?
+  level       String   @default("info") // info, warn, error, debug
+  message     String   @db.Text
+  stack       String?  @db.Text
+  url         String?
+  userAgent   String?
+  context     Json? // Extra contextual data
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([characterId])
+  @@index([createdAt])
+}
+
+// === SDE: Ship Stats ===
+model ShipStats {
+  typeId Int    @id
+  name   String
+  raceId Int?
+  groupId Int?
+  factionName String?
+  groupName   String?
+
+  // Slots
+  highSlots Int @default(0)
+  medSlots  Int @default(0)
+  lowSlots  Int @default(0)
+  rigSlots  Int @default(0)
+  subsystemSlots Int @default(0)
+
+  // Requirements
+  cpu       Float @default(0)
+  powerGrid Float @default(0)
+  calibration Float @default(0)
+
+  // Capacities
+  capacitor         Float @default(0)
+  capacitorRecharge Float @default(0)
+  shieldCapacity    Float @default(0)
+  armorHP           Float @default(0)
+  hullHP            Float @default(0)
+
+  // Resistances (percentage - ex: 0.5 = 50%)
+  shieldEmResist    Float @default(0)
+  shieldExpResist   Float @default(0)
+  shieldKinResist   Float @default(0)
+  shieldThermResist Float @default(0)
+
+  armorEmResist    Float @default(0)
+  armorExpResist   Float @default(0)
+  armorKinResist   Float @default(0)
+  armorThermResist Float @default(0)
+
+  hullEmResist    Float @default(0)
+  hullExpResist   Float @default(0)
+  hullKinResist   Float @default(0)
+  hullThermResist Float @default(0)
+
+  // Speed
+  maxVelocity Float @default(0)
+  agility     Float @default(1)
+  mass        Float @default(0)
+  warpSpeed   Float @default(0)
+  alignTime   Float @default(0)
+
+  // Cargo
+  droneBay Float @default(0)
+  droneBandwidth Float @default(0)
+  cargo    Float @default(0)
+
+  // Targeting
+  maxLockedTargets    Int @default(5)
+  maxTargetRange      Float @default(50000)
+  signatureRadius     Float @default(100)
+  scanResolution      Float @default(100)
+  sensorStrength      Float @default(0)
+  sensorType          String @default("")
+  
+  // Scan (legacy - kept for compatibility)
+  scanRange     Float @default(0)
+  scanResolving Float @default(0)
+
+  // Hardpoints
+  turretHardpoints   Int @default(0)
+  launcherHardpoints Int @default(0)
+
+  // Restrictions (rigSize, etc)
+  restrictions Json @default("{}")
+
+  // Meta
+  syncedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  dogmaAttributes ShipDogmaAttribute[]
+  traits          ShipTrait[]
+  eveType         EveType @relation(fields: [typeId], references: [id])
+}
+
+// === SDE: Ship Traits (Ship Bonuses) ===
+model ShipTrait {
+  id          String   @id @default(cuid())
+  shipTypeId  Int
+  bonus       Float?
+  bonusText   String?
+  unit        String?
+  skillID     Int?     // The skill that gives this bonus
+  isFixed     Boolean  @default(false) // If true, it's a fixed trait (Role Bonus)
+
+  ship        ShipStats @relation(fields: [shipTypeId], references: [typeId], onDelete: Cascade)
+
+  @@index([shipTypeId])
+}
+
+// === SDE: Ship Dogma Attributes (additional attributes) ===
+model ShipDogmaAttribute {
+  id          String @id @default(cuid())
+  shipTypeId  Int
+  attributeId Int
+  attributeName String
+  value       Float
+
+  ship        ShipStats @relation(fields: [shipTypeId], references: [typeId], onDelete: Cascade)
+
+  @@unique([shipTypeId, attributeId])
+  @@index([shipTypeId])
+  @@index([attributeId])
+  @@index([attributeName])
+}
+
+// === SDE: Module Stats ===
+model ModuleStats {
+  typeId        Int     @id
+  name          String
+  groupId       Int?
+  groupName     String?
+  categoryId    Int?
+  metaLevel     Int?
+  metaGroupName String?
+  price         Float?
+
+  // Requirements
+  cpu       Float @default(0)
+  powerGrid Float @default(0)
+
+  // Slot type
+  slotType String? // "high", "med", "low", "rig", "subsystem"
+
+  // Combat stats
+  damage        Float @default(0) // DPS base
+  fireRate      Float @default(0) // Seconds between shots
+  optimalRange  Float @default(0) // Optimal range (m)
+  falloffRange  Float @default(0) // Falloff (m)
+  trackingSpeed Float @default(0) // Tracking
+
+  // Missile specific
+  missileDamage   Float @default(0)
+  missileRange    Float @default(0)
+  missileVelocity Float @default(0)
+
+  // Tank stats
+  shieldBoost Float @default(0) // HP/s shield repair
+  armorRepair Float @default(0) // HP/s armor repair
+  hullRepair  Float @default(0) // HP/s hull repair
+
+  // Capacitor
+  capacitorNeed  Float @default(0) // Cap per cycle
+  capacitorDrain Float @default(0) // Cap per second
+
+  // Electronic Warfare
+  ecmStrength             Float @default(0)
+  sensorDampStrength      Float @default(0)
+  trackingDisruptStrength Float @default(0)
+  webSpeedPenalty         Float @default(0)
+  webRangeBonus           Float @default(0)
+
+  // Propulsion
+  speedBonus Float @default(0) // % speed bonus
+  mass       Float @default(0) // Mass penalty
+
+  // Tank bonuses (Flat)
+  shieldBonus Float @default(0)
+  armorBonus  Float @default(0)
+  hullBonus   Float @default(0)
+
+  // Calibration requirement
+  calibration Int @default(0)
+
+  // Multipliers (1.0 = no change, 0.9 = 10% bonus/reduction)
+  damageMultiplier Float @default(1)
+  rofMultiplier    Float @default(1) // Speed Multiplier (Fire rate)
+  
+  // Resistance Multipliers (Incoming damage multipliers)
+  shieldEmResistMultiplier    Float @default(1)
+  shieldThermResistMultiplier Float @default(1)
+  shieldKinResistMultiplier   Float @default(1)
+  shieldExpResistMultiplier   Float @default(1)
+  
+  armorEmResistMultiplier    Float @default(1)
+  armorThermResistMultiplier Float @default(1)
+  armorKinResistMultiplier   Float @default(1)
+  armorExpResistMultiplier   Float @default(1)
+  
+  hullEmResistMultiplier    Float @default(1)
+  hullThermResistMultiplier Float @default(1)
+  hullKinResistMultiplier   Float @default(1)
+  hullExpResistMultiplier   Float @default(1)
+
+  // Resource Multipliers
+  cpuMultiplier   Float @default(1)
+  powerMultiplier Float @default(1)
+
+  // Charge compatibility (dogma attributes 604-613)
+  chargeGroup1  Int?
+  chargeGroup2  Int?
+  chargeGroup3  Int?
+  chargeGroup4  Int?
+  chargeGroup5  Int?
+  chargeGroup6  Int?
+  chargeGroup7  Int?
+  chargeGroup8  Int?
+  chargeGroup9  Int?
+  chargeGroup10 Int?
+  chargeSize    Int? // 1=Small, 2=Medium, 3=Large, 4=XL
+
+  // Effects (JSON for complex effects)
+  effects Json @default("{}")
+
+  // Restrictions (canFitOnGroup, canFitOnType)
+  restrictions Json @default("{}")
+
+  // Meta
+  syncedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  dogmaAttributes ModuleDogmaAttribute[]
+
+  @@index([slotType])
+  @@index([groupId])
+}
+
+model ModuleDogmaAttribute {
+  id            String      @id @default(cuid())
+  moduleTypeId  Int
+  attributeId   Int
+  attributeName String
+  value         Float
+
+  module        ModuleStats @relation(fields: [moduleTypeId], references: [typeId], onDelete: Cascade)
+
+  @@unique([moduleTypeId, attributeId])
+  @@index([moduleTypeId])
+  @@index([attributeId])
+  @@index([attributeName])
+}
+
+// === SDE: Charge Stats ===
+model ChargeStats {
+  typeId        Int     @id
+  name          String
+  groupId       Int?
+  groupName     String?
+  chargeSize    Int?    // 1=Small, 2=Medium, 3=Large, 4=XL
+  metaLevel     Int?
+  metaGroupName String?
+
+  // Damage stats
+  emDamage    Float @default(0)
+  thermDamage Float @default(0)
+  kinDamage   Float @default(0)
+  expDamage   Float @default(0)
+
+  // Range/detonation (missiles)
+  missileDamage Float @default(0)
+  explosionRadius Float @default(0)
+  explosionVelocity Float @default(0)
+
+  // Capacitor (capacitor boosters)
+  capacitorAmount Float @default(0)
+
+  syncedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId])
+  @@index([chargeSize])
+}
+
+model ActivationCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  type        String   // "DAYS_7", "DAYS_30", "LIFETIME", "PL8R"
+  createdBy   String?  // Legacy: Id or name of Admin who created it (keep for backward compatibility)
+  createdById String?  // ID of Admin who created it
+  creator     User?    @relation("CreatedCodes", fields: [createdById], references: [id])
+  
+  isUsed      Boolean  @default(false)
+  isInvalidated Boolean @default(false)
+  usedAt      DateTime?
+  usedById    String?
+  usedBy     User?    @relation(fields: [usedById], references: [id])
+  promoBannerInteraction PromoBannerInteraction?
+  
+  createdAt   DateTime @default(now())
+
+  @@index([isUsed])
+}
+
+model PromoBanner {
+  id              String   @id @default(cuid())
+  title           String
+  description     String   @db.Text
+  badgeText       String?
+  buttonText      String   @default("Generate 7-day premium code")
+  imageUrl        String?
+  type            String   @default("BANNER") // BANNER, MODAL, TOAST
+  actionType      String   @default("CLAIM_CODE") // CLAIM_CODE, REDIRECT, EXTERNAL_LINK
+  actionConfig    Json?    @default("{}")
+  targetingRules  Json?    @default("{}")
+  placement       String   @default("dashboard_home")
+  targetSegment   String   @default("NEW_NON_PREMIUM_USERS")
+  maxAccountAgeDays Int?
+  priority        Int      @default(0)
+  dismissible     Boolean  @default(true)
+  isActive        Boolean  @default(true)
+  startsAt        DateTime?
+  endsAt          DateTime?
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  interactions    PromoBannerInteraction[]
+
+  @@index([placement, isActive])
+  @@index([priority])
+  @@index([startsAt])
+  @@index([endsAt])
+}
+
+model PromoBannerInteraction {
+  id               String   @id @default(cuid())
+  bannerId         String
+  userId           String
+  activationCodeId String?  @unique
+  claimedAt        DateTime?
+  dismissedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  banner           PromoBanner   @relation(fields: [bannerId], references: [id], onDelete: Cascade)
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activationCode   ActivationCode? @relation(fields: [activationCodeId], references: [id], onDelete: SetNull)
+
+  @@unique([bannerId, userId])
+  @@index([bannerId, claimedAt])
+  @@index([bannerId, dismissedAt])
+  @@index([userId])
+}
+
+model News {
+  id        String   @id @default(cuid())
+  title     String
+  content   String   @db.Text
+  imageUrl  String?
+  category  String   @default("news") // "news", "forum", "patch"
+  authorId  String
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([category])
+  @@index([published])
+}
+
+model IskHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Float    // Positive = credit, Negative = debit
+  type      String   // "payment", "subscription"
+  reference String?  // Payment ID or subscription reference
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model SecurityEvent {
+  id        String   @id @default(cuid())
+  event     String   
+  ipAddress String?
+  userAgent String?
+  path      String?
+  userId    String?  
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([event])
+  @@index([createdAt])
+}
+
+// === PLAYER PROFILE SYSTEM ===
+
+model UserProfile {
+  userId          String  @id
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  bio             String? @db.Text
+  bannerUrl       String?
+  discordUrl      String?
+  websiteUrl      String?
+  customThemeColor String? // Hex code or tailwind class
+  
+  isPublic        Boolean @default(true)
+  showKills       Boolean @default(true)
+  showDeaths      Boolean @default(true)
+  showReputation  Boolean @default(true)
+  showMedals      Boolean @default(true)
+  showActivities  Boolean @default(true)
+  showFits        Boolean @default(true)
+  showContacts    Boolean @default(true)
+  showLocation   Boolean @default(false)
+  showShip       Boolean @default(false)
+  showWallet     Boolean @default(true)
+
+  // Auto-tracking settings
+  autoTrackingEnabled Boolean @default(true)
+
+  // User preferences
+  locale       String?   @default("en")
+  accentColor  String?   @default("cyan")
+
+  // Notification settings
+  notificationEmail     Boolean @default(true)
+  notificationSkills   Boolean @default(false)
+  notificationMarket   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EasyEveMedal {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  icon        String?  // emoji
+  criteria    String   // JSON: { type: "hours"|"count"|"ranking", value: number, activity?: "mining"|"ratting"|"exploration" }
+  tier        String   @default("bronze") // bronze, silver, gold, platinum
+  type        String   @default("instant") // instant, daily, weekly, monthly
+  isActive    Boolean  @default(true)
+
+  awards      MedalAward[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([type])
+}
+
+model MedalAward {
+  id        String       @id @default(cuid())
+  medalId   String
+  medal     EasyEveMedal @relation(fields: [medalId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  period    String?      // "2025-W15", "2025-04" - for ranking medals
+  count     Int          @default(1) // number of times earned (for ranking medals)
+  awardedAt DateTime     @default(now())
+
+  @@unique([medalId, userId, period])
+  @@index([userId])
+  @@index([medalId])
+  @@index([period])
+}
+
+model PlayerMessage {
+  id          String   @id @default(cuid())
+  senderId    String
+  sender      User     @relation("SenderMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId  String
+  receiver    User     @relation("ReceiverMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  content     String   @db.Text
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+}
+
+model ReputationHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Float    // points added (can be negative for adjustments)
+  reason    String   // "mining_10h", "ratting_100m", "first_activity", "admin_adjustment"
+  period    String?  // "2025-W15", "2025-04" - optional period reference
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([reason])
+  @@index([period])
+  @@index([createdAt])
+}
+
+model UserContact {
+  id        String   @id @default(cuid())
+  userId    String   // who added the contact
+  user      User     @relation("UserContacts", fields: [userId], references: [id], onDelete: Cascade)
+  contactId String   // who was added
+  contact   User     @relation("ContactOfUser", fields: [contactId], references: [id], onDelete: Cascade)
+  status    String   @default("accepted") // pending, accepted, rejected
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([userId, contactId])
+  @@index([userId])
+  @@index([contactId])
+  @@index([status])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   // who receives the notification
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // "message", "medal", "payment", "friend_request", "system"
+  title     String
+  content   String?  @db.Text
+  link      String?  // optional link to related content
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// === Script Execution Tracking ===
+model ScriptExecution {
+  id String @id @default(cuid())
+  scriptId String
+  scheduleId String?
+  userId String?
+  status String @default("pending")
+  params Json?
+  dryRun Boolean @default(false)
+  logs Json @default("[]")
+  progress Json @default("{}")
+  error String? @db.Text
+  startedAt DateTime?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scriptId])
+  @@index([scheduleId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ScriptSchedule {
+  id String @id @default(cuid())
+  scriptId String
+  name String
+  cron String?
+  interval String?
+  params Json?
+  dryRun Boolean @default(false)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scriptId])
+  @@index([active])
+  @@index([active, nextRunAt])
+}
+
+/// One row per processScheduledScripts() tick — used for scheduler health / admin monitoring.
+model SchedulerHeartbeat {
+  id             String   @id @default(cuid())
+  tickAt         DateTime @default(now())
+  dueCount       Int      @default(0)
+  triggeredCount Int      @default(0)
+  /// external (HTTP trigger), internal (in-process heartbeat), manual (reserved)
+  source         String
+  durationMs     Int      @default(0)
+
+  @@index([tickAt])
+}
+
+model HomepageCarousel {
+  id        String   @id @default(cuid())
+  imageUrl  String
+  altText   String?
+  link      String?
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CustomScriptMemo {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  code        String   @db.Text
+  args        Json     @default("{}")
+  isShared    Boolean  @default(false)
+  userId      String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model FleetTemplate {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  activityType String
+  participants Json     // [{ characterId: number }]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@unique([userId, name])
+}
+
+model FeatureFlag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isEnabled Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
