@@ -1,0 +1,23 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="planetGradient" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <!-- The Planet Base -->
+  <circle cx="16" cy="16" r="16" fill="#000000" />
+  <!-- The Planet Lighting (Lit Side) -->
+  <circle cx="16" cy="16" r="16" fill="url(#planetGradient)" />
+  <!-- The Atmospheric Rim -->
+  <circle cx="16" cy="16" r="15.5" fill="none" stroke="white" stroke-opacity="0.2" />
+  <!-- The Brand Initial -->
+  <text 
+    x="16" 
+    y="23" 
+    text-anchor="middle" 
+    fill="white" 
+    fill-opacity="0.95" 
+    style="font-family: sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -1px;"
+  >E</text>
+</svg>

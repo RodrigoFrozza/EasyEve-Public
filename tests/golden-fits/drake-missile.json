@@ -1,0 +1,29 @@
+{
+  "id": "drake-missile",
+  "shipTypeId": 24698,
+  "target": {
+    "signatureRadius": 145,
+    "velocity": 320,
+    "angularVelocity": 0.02
+  },
+  "weapon": {
+    "optimal": 30000,
+    "falloff": 10000,
+    "tracking": 0.05,
+    "rangeToTarget": 30000
+  },
+  "missile": {
+    "explosionRadius": 125,
+    "explosionVelocity": 900
+  },
+  "capacitor": {
+    "capacity": 3200,
+    "rechargeTimeMs": 900000,
+    "usagePerSecond": 4.5
+  },
+  "expected": {
+    "turretHitChance": 0.9916,
+    "missileApplication": 1.0,
+    "capStable": false
+  }
+}
