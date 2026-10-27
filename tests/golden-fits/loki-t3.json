@@ -1,0 +1,29 @@
+{
+  "id": "loki-t3",
+  "shipTypeId": 29990,
+  "target": {
+    "signatureRadius": 130,
+    "velocity": 280,
+    "angularVelocity": 0.05
+  },
+  "weapon": {
+    "optimal": 18000,
+    "falloff": 15000,
+    "tracking": 0.18,
+    "rangeToTarget": 16000
+  },
+  "missile": {
+    "explosionRadius": 85,
+    "explosionVelocity": 1200
+  },
+  "capacitor": {
+    "capacity": 1700,
+    "rechargeTimeMs": 500000,
+    "usagePerSecond": 2.9
+  },
+  "expected": {
+    "turretHitChance": 0.9949,
+    "missileApplication": 1.0,
+    "capStable": false
+  }
+}

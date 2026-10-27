@@ -1,0 +1,29 @@
+{
+  "id": "rupture-armor",
+  "shipTypeId": 629,
+  "target": {
+    "signatureRadius": 140,
+    "velocity": 230,
+    "angularVelocity": 0.06
+  },
+  "weapon": {
+    "optimal": 12000,
+    "falloff": 18000,
+    "tracking": 0.22,
+    "rangeToTarget": 15000
+  },
+  "missile": {
+    "explosionRadius": 120,
+    "explosionVelocity": 600
+  },
+  "capacitor": {
+    "capacity": 1200,
+    "rechargeTimeMs": 380000,
+    "usagePerSecond": 2.1
+  },
+  "expected": {
+    "turretHitChance": 0.9768,
+    "missileApplication": 1.0,
+    "capStable": false
+  }
+}

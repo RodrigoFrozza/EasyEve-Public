@@ -1,0 +1,29 @@
+{
+  "id": "guardian-logi",
+  "shipTypeId": 11987,
+  "target": {
+    "signatureRadius": 125,
+    "velocity": 160,
+    "angularVelocity": 0.03
+  },
+  "weapon": {
+    "optimal": 1000,
+    "falloff": 1000,
+    "tracking": 0.01,
+    "rangeToTarget": 1000
+  },
+  "missile": {
+    "explosionRadius": 90,
+    "explosionVelocity": 500
+  },
+  "capacitor": {
+    "capacity": 2600,
+    "rechargeTimeMs": 650000,
+    "usagePerSecond": 2.2
+  },
+  "expected": {
+    "turretHitChance": 0.5279,
+    "missileApplication": 1.0,
+    "capStable": false
+  }
+}
